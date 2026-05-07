@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Nova tabela para agrupar as mensagens
+model Conversation {
+  id        String    @id @default(uuid()) // Usando UUID (hash) para o ID da conversa
+  title     String    @default("Nova Conversa")
+  createdAt DateTime  @default(now())
+  messages  Message[]
+}
+
+// A tabela de mensagens agora tem um 'conversationId'
+model Message {
+  id             Int          @id @default(autoincrement())
+  role           String
+  content        String
+  createdAt      DateTime     @default(now())
+  
+  // Relação com a tabela Conversation
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}

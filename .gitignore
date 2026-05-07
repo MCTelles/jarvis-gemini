@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets and local config
+.env
+credentials.json
+token.json
+
+# Runtime artifacts
+notas_salvas/
+
+# macOS
+.DS_Store
+
+# Frontend / Node
+node_modules/
+dist/
+jarvis-frontend/node_modules/
+jarvis-node-backend/node_modules/
+
+# Editors
+.vscode/
+.idea/
