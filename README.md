@@ -17,6 +17,14 @@ Fluxo da aplicação:
 4. O serviço Python conversa com o Gemini e devolve a resposta.
 5. O backend Node salva a resposta e retorna para o frontend.
 
+Fluxo da análise de imagem:
+
+1. O usuário seleciona uma imagem no frontend.
+2. O frontend envia a imagem em base64 com um prompt para o backend Node.
+3. O backend Node encaminha a imagem para o serviço Python.
+4. O serviço Python envia a imagem para o Gemini e recebe a análise.
+5. A resposta volta para o chat da conversa atual.
+
 ## Requisitos
 
 - Node.js 18+
@@ -138,12 +146,31 @@ npm run dev
 
 O frontend normalmente sobe em `http://localhost:5173`.
 
+## Como usar a análise de imagem
+
+1. Crie ou selecione uma conversa.
+2. Clique no botão de imagem ao lado do campo de texto.
+3. Escolha uma imagem do computador.
+4. Digite um prompt como:
+   - `descreva essa imagem`
+   - `quais objetos aparecem aqui?`
+   - `analise essa imagem em detalhes`
+   - `tem texto nessa imagem?`
+5. Envie a mensagem normalmente.
+
+Observações:
+
+- Se você enviar só a imagem sem texto, o sistema usa um prompt padrão de análise.
+- A imagem aparece no chat durante a sessão atual.
+- No banco, por enquanto fica salvo apenas o texto da solicitação da imagem e a resposta da IA.
+
 ## Funcionalidades atuais
 
 - criação de conversas
 - histórico salvo em banco
 - exclusão de conversas
 - integração com Gemini
+- análise de imagem com Gemini
 - abertura de sites
 - notas locais
 - agenda Google
@@ -184,7 +211,9 @@ Não deve subir:
 7. Configurar o PostgreSQL.
 8. Rodar `npx prisma db push`.
 9. Subir Python, Node e frontend.
-10. Fazer login Google na primeira execução, se forem usar integrações OAuth.
+10. Testar uma conversa normal por texto.
+11. Testar o envio de uma imagem para análise.
+12. Fazer login Google na primeira execução, se forem usar integrações OAuth.
 
 ## Git
 
