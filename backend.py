@@ -3,6 +3,7 @@ JARVIS — Backend FastAPI (Worker de IA)
 =======================================
 """
 
+import base64
 import os
 import time
 import logging
@@ -16,7 +17,13 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from gemini import GOOGLE_API_KEY, MAPS_API_KEY, apagar_conversa, enviar_mensagem
+from gemini import (
+    GOOGLE_API_KEY,
+    MAPS_API_KEY,
+    analisar_imagem,
+    apagar_conversa,
+    enviar_mensagem,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("JARVIS")
@@ -66,6 +73,16 @@ class MensagemRequest(BaseModel):
     tts: bool = False
     conversation_id: str = "default"
 
+
+class AnaliseImagemRequest(BaseModel):
+    prompt: str = "Analise esta imagem em detalhes."
+    image_base64: str
+    mime_type: str = "image/jpeg"
+    file_name: str = "imagem.jpg"
+    tts: bool = False
+    conversation_id: str = "default"
+
+
 @app.post("/chat")
 async def chat_endpoint(req: MensagemRequest):
     """Recebe mensagem e processa no contexto da conversa correta."""
@@ -79,6 +96,30 @@ async def chat_endpoint(req: MensagemRequest):
         return JSONResponse({"resposta": texto_resposta, "audio": audio_b64})
     except Exception as e:
         log.error(f"Erro no chat: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analyze-image")
+async def analyze_image_endpoint(req: AnaliseImagemRequest):
+    """Recebe imagem e prompt para análise com o Gemini."""
+    try:
+        image_bytes = base64.b64decode(req.image_base64)
+        texto_resposta = analisar_imagem(
+            prompt=req.prompt,
+            image_bytes=image_bytes,
+            mime_type=req.mime_type,
+            file_name=req.file_name,
+            conversation_id=req.conversation_id,
+            logger=log,
+        )
+
+        audio_b64 = None
+        if req.tts:
+            threading.Thread(target=falar, args=(texto_resposta,), daemon=True).start()
+
+        return JSONResponse({"resposta": texto_resposta, "audio": audio_b64})
+    except Exception as e:
+        log.error(f"Erro na analise de imagem: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/status")

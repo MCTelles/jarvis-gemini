@@ -8,6 +8,8 @@ import {
 	Plus,
 	MessageSquare,
 	Trash2,
+	Image,
+	X,
 } from 'lucide-react';
 
 const API_URL = 'http://localhost:3001/api';
@@ -20,9 +22,12 @@ export default function App() {
 	const [isTyping, setIsTyping] = useState(false);
 	const [ttsActive, setTtsActive] = useState(false);
 	const [isRecording, setIsRecording] = useState(false);
+	const [selectedImage, setSelectedImage] = useState(null);
+	const [imagePreview, setImagePreview] = useState('');
 
 	const chatRef = useRef(null);
 	const recognitionRef = useRef(null);
+	const fileInputRef = useRef(null);
 
 	// 1. Ao iniciar, carrega a lista de conversas
 	useEffect(() => {
@@ -120,26 +125,79 @@ export default function App() {
 		}
 	};
 
+	const limparImagemSelecionada = () => {
+		setSelectedImage(null);
+		setImagePreview('');
+		if (fileInputRef.current) {
+			fileInputRef.current.value = '';
+		}
+	};
+
+	const selecionarImagem = e => {
+		const arquivo = e.target.files?.[0];
+		if (!arquivo) return;
+
+		setSelectedImage(arquivo);
+
+		const reader = new FileReader();
+		reader.onload = evento => {
+			setImagePreview(evento.target?.result || '');
+		};
+		reader.readAsDataURL(arquivo);
+	};
+
+	const arquivoParaBase64 = arquivo =>
+		new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				const resultado = reader.result;
+				if (typeof resultado !== 'string') {
+					reject(new Error('Falha ao ler a imagem.'));
+					return;
+				}
+
+				const [, base64] = resultado.split(',');
+				resolve(base64 || '');
+			};
+			reader.onerror = () => reject(new Error('Falha ao ler a imagem.'));
+			reader.readAsDataURL(arquivo);
+		});
+
 	const enviarMensagem = async textoOverride => {
 		const texto = textoOverride || input;
-		if (!texto.trim() || !activeChatId) return;
+		const prompt = texto.trim() || 'Analise esta imagem em detalhes.';
+		if ((!texto.trim() && !selectedImage) || !activeChatId) return;
 
 		const novaMensagem = {
 			id: Date.now(),
 			role: 'user',
-			content: texto,
+			content: prompt,
 			createdAt: new Date(),
+			imageUrl: imagePreview || null,
 		};
 		setMessages(prev => [...prev, novaMensagem]);
 		setInput('');
 		setIsTyping(true);
 
 		try {
-			const res = await axios.post(`${API_URL}/chat`, {
-				texto: texto,
-				tts: ttsActive,
-				conversationId: activeChatId, // MANDANDO O ID PARA O NODE!
-			});
+			let res;
+			if (selectedImage) {
+				const imageBase64 = await arquivoParaBase64(selectedImage);
+				res = await axios.post(`${API_URL}/image-analysis`, {
+					prompt,
+					imageBase64,
+					mimeType: selectedImage.type || 'image/jpeg',
+					fileName: selectedImage.name,
+					tts: ttsActive,
+					conversationId: activeChatId,
+				});
+			} else {
+				res = await axios.post(`${API_URL}/chat`, {
+					texto: texto,
+					tts: ttsActive,
+					conversationId: activeChatId,
+				});
+			}
 
 			setMessages(prev => [
 				...prev,
@@ -151,7 +209,7 @@ export default function App() {
 				},
 			]);
 
-			// Atualiza os títulos no menu lateral discretamente
+			limparImagemSelecionada();
 			carregarConversas();
 		} catch (error) {
 			setMessages(prev => [
@@ -164,6 +222,7 @@ export default function App() {
 				},
 			]);
 		} finally {
+			limparImagemSelecionada();
 			setIsTyping(false);
 		}
 	};
@@ -459,6 +518,19 @@ export default function App() {
 												__html: msg.content.replace(/\n/g, '<br/>'),
 											}}
 										/>
+										{msg.imageUrl && (
+											<img
+												src={msg.imageUrl}
+												alt="Imagem enviada para analise"
+												style={{
+													display: 'block',
+													marginTop: 12,
+													maxWidth: '100%',
+													borderRadius: 4,
+													border: '1px solid var(--border)',
+												}}
+											/>
+										)}
 									</div>
 								</div>
 							))
@@ -541,6 +613,57 @@ export default function App() {
 							borderTop: '1px solid var(--border)',
 						}}
 					>
+						<input
+							ref={fileInputRef}
+							type="file"
+							accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+							onChange={selecionarImagem}
+							style={{ display: 'none' }}
+						/>
+						{imagePreview && (
+							<div
+								style={{
+									marginBottom: 12,
+									display: 'inline-flex',
+									alignItems: 'center',
+									gap: 12,
+									padding: 10,
+									border: '1px solid var(--border)',
+									background: 'var(--panel)',
+									borderRadius: 6,
+								}}
+							>
+								<img
+									src={imagePreview}
+									alt="Preview da imagem"
+									style={{
+										width: 60,
+										height: 60,
+										objectFit: 'cover',
+										borderRadius: 4,
+										border: '1px solid var(--border)',
+									}}
+								/>
+								<div style={{ color: 'var(--text-dim)', fontSize: 13 }}>
+									{selectedImage?.name || 'Imagem pronta para analise'}
+								</div>
+								<button
+									onClick={limparImagemSelecionada}
+									style={{
+										marginLeft: 'auto',
+										background: 'transparent',
+										border: 'none',
+										color: 'var(--text-dim)',
+										cursor: 'pointer',
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+									}}
+								>
+									<X size={16} />
+								</button>
+							</div>
+						)}
 						<div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
 							<button
 								onClick={() => setTtsActive(!ttsActive)}
@@ -559,11 +682,29 @@ export default function App() {
 							>
 								{ttsActive ? <Volume2 size={20} /> : <VolumeX size={20} />}
 							</button>
+							<button
+								onClick={() => fileInputRef.current?.click()}
+								disabled={!activeChatId || isTyping}
+								style={{
+									width: 52,
+									height: 52,
+									border: `1px solid ${imagePreview ? 'rgba(0,212,255,0.4)' : 'var(--border)'}`,
+									borderRadius: 4,
+									background: imagePreview ? 'var(--glow2)' : 'var(--panel)',
+									color: imagePreview ? 'var(--accent)' : 'var(--text-dim)',
+									cursor: 'pointer',
+									display: 'flex',
+									alignItems: 'center',
+									justifyContent: 'center',
+								}}
+							>
+								<Image size={20} />
+							</button>
 							<textarea
 								value={input}
 								onChange={e => setInput(e.target.value)}
 								onKeyDown={handleKeyDown}
-								placeholder="Digite um comando ou fale com o microfone..."
+								placeholder="Digite uma mensagem ou descreva o que deseja analisar na imagem..."
 								disabled={!activeChatId}
 								style={{
 									flex: 1,
@@ -602,7 +743,7 @@ export default function App() {
 							</button>
 							<button
 								onClick={() => enviarMensagem()}
-								disabled={!input.trim() || isTyping || !activeChatId}
+								disabled={(!input.trim() && !selectedImage) || isTyping || !activeChatId}
 								style={{
 									width: 52,
 									height: 52,

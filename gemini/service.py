@@ -1,4 +1,5 @@
 import logging
+from io import BytesIO
 
 import google.generativeai as genai
 
@@ -17,7 +18,7 @@ _model = genai.GenerativeModel(
 _sessoes_chat = {}
 
 
-def enviar_mensagem(texto: str, conversation_id: str, logger: logging.Logger | None = None) -> str:
+def _obter_chat(conversation_id: str, logger: logging.Logger | None = None):
     if conversation_id not in _sessoes_chat:
         if logger:
             logger.info("Criando nova sessão de IA para a conversa: %s", conversation_id)
@@ -25,8 +26,39 @@ def enviar_mensagem(texto: str, conversation_id: str, logger: logging.Logger | N
             enable_automatic_function_calling=True
         )
 
-    chat_atual = _sessoes_chat[conversation_id]
+    return _sessoes_chat[conversation_id]
+
+
+def enviar_mensagem(texto: str, conversation_id: str, logger: logging.Logger | None = None) -> str:
+    chat_atual = _obter_chat(conversation_id, logger=logger)
     response = chat_atual.send_message(texto)
+    return response.text
+
+
+def analisar_imagem(
+    prompt: str,
+    image_bytes: bytes,
+    mime_type: str,
+    file_name: str,
+    conversation_id: str,
+    logger: logging.Logger | None = None,
+) -> str:
+    chat_atual = _obter_chat(conversation_id, logger=logger)
+    arquivo = None
+
+    try:
+        buffer = BytesIO(image_bytes)
+        buffer.name = file_name or "imagem"
+        arquivo = genai.upload_file(buffer, mime_type=mime_type, display_name=file_name)
+        response = chat_atual.send_message([arquivo, prompt])
+    finally:
+        if arquivo:
+            try:
+                genai.delete_file(arquivo.name)
+            except Exception:
+                if logger:
+                    logger.warning("Nao foi possivel apagar o arquivo temporario do Gemini.")
+
     return response.text
 
 

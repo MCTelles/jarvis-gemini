@@ -19,7 +19,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 
 // ==========================================
 // ROTA 1: Status
@@ -149,6 +149,56 @@ app.post('/api/chat', async (req, res) => {
 	} catch (error) {
 		console.error('[Node] Erro na comunicação:', error.message);
 		res.status(502).json({ erro: 'Falha na comunicação com a IA.' });
+	}
+});
+
+// ==========================================
+// ROTA 7: Analise de imagem com Gemini
+// ==========================================
+app.post('/api/image-analysis', async (req, res) => {
+	const { prompt, imageBase64, mimeType, fileName, tts, conversationId } = req.body;
+
+	if (!imageBase64 || !conversationId) {
+		return res
+			.status(400)
+			.json({ erro: 'imageBase64 e conversationId sao obrigatorios.' });
+	}
+
+	const promptFinal = prompt?.trim() || 'Analise esta imagem em detalhes.';
+
+	try {
+		await prisma.message.create({
+			data: {
+				role: 'user',
+				content: `[Imagem] ${promptFinal}`,
+				conversationId,
+			},
+		});
+
+		const pythonResponse = await axios.post(`${PYTHON_SERVICE_URL}/analyze-image`, {
+			prompt: promptFinal,
+			image_base64: imageBase64,
+			mime_type: mimeType || 'image/jpeg',
+			file_name: fileName || 'imagem.jpg',
+			tts: tts || false,
+			conversation_id: conversationId,
+		});
+
+		const respostaIA = pythonResponse.data.resposta;
+
+		await prisma.message.create({
+			data: { role: 'ai', content: respostaIA, conversationId },
+		});
+
+		await prisma.conversation.update({
+			where: { id: conversationId },
+			data: { title: promptFinal.split(' ').slice(0, 3).join(' ') + '...' },
+		});
+
+		res.json(pythonResponse.data);
+	} catch (error) {
+		console.error('[Node] Erro na analise de imagem:', error.message);
+		res.status(502).json({ erro: 'Falha na comunicacao com a IA.' });
 	}
 });
 
