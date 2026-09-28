@@ -19,6 +19,7 @@ model Message {
   id             Int          @id @default(autoincrement())
   role           String
   content        String
+  imageData      String?      @db.Text
   createdAt      DateTime     @default(now())
   
   // Relação com a tabela Conversation

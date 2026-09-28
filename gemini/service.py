@@ -15,22 +15,24 @@ _model = genai.GenerativeModel(
     system_instruction=SYSTEM_INSTRUCTION,
 )
 
-_sessoes_chat = {}
+def _obter_chat(historico: list[dict[str, str]]):
+    """Recria o contexto a partir do histórico persistido pelo backend Node."""
+    mensagens = [
+        {
+            "role": "model" if item["role"] == "ai" else "user",
+            "parts": [item["content"]],
+        }
+        for item in historico
+        if item.get("role") in {"user", "ai"} and item.get("content")
+    ]
+    return _model.start_chat(
+        history=mensagens,
+        enable_automatic_function_calling=True,
+    )
 
 
-def _obter_chat(conversation_id: str, logger: logging.Logger | None = None):
-    if conversation_id not in _sessoes_chat:
-        if logger:
-            logger.info("Criando nova sessão de IA para a conversa: %s", conversation_id)
-        _sessoes_chat[conversation_id] = _model.start_chat(
-            enable_automatic_function_calling=True
-        )
-
-    return _sessoes_chat[conversation_id]
-
-
-def enviar_mensagem(texto: str, conversation_id: str, logger: logging.Logger | None = None) -> str:
-    chat_atual = _obter_chat(conversation_id, logger=logger)
+def enviar_mensagem(texto: str, historico: list[dict[str, str]]) -> str:
+    chat_atual = _obter_chat(historico)
     response = chat_atual.send_message(texto)
     return response.text
 
@@ -40,10 +42,10 @@ def analisar_imagem(
     image_bytes: bytes,
     mime_type: str,
     file_name: str,
-    conversation_id: str,
+    historico: list[dict[str, str]],
     logger: logging.Logger | None = None,
 ) -> str:
-    chat_atual = _obter_chat(conversation_id, logger=logger)
+    chat_atual = _obter_chat(historico)
     arquivo = None
 
     try:
@@ -60,7 +62,3 @@ def analisar_imagem(
                     logger.warning("Nao foi possivel apagar o arquivo temporario do Gemini.")
 
     return response.text
-
-
-def apagar_conversa(conversation_id: str) -> bool:
-    return _sessoes_chat.pop(conversation_id, None) is not None

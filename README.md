@@ -1,229 +1,98 @@
 # JARVIS Gemini
 
-Projeto da faculdade com interface web, backend Node.js e serviço Python integrado ao Gemini.
+Assistente pessoal desenvolvido como projeto de faculdade. A interface em React conversa com um backend Node.js, que salva as conversas no PostgreSQL e chama um serviço Python para usar o Gemini e ferramentas locais.
 
-## Arquitetura
+## O que faz
 
-- `jarvis-frontend/`: interface React + Vite.
-- `jarvis-node-backend/`: backend Node.js com Express, Prisma e PostgreSQL.
-- `backend.py`: serviço Python com FastAPI.
-- `gemini/`: módulo com integração Gemini, ferramentas e memória das conversas.
+- Conversas por texto com histórico salvo no banco.
+- Análise de imagens PNG, JPEG e WebP de até 5 MB. As imagens enviadas também aparecem no histórico.
+- Ditado pelo navegador e leitura de respostas em voz no computador que executa o serviço Python.
+- Ferramentas para notas locais, agenda e Gmail via OAuth, buscas no YouTube e Spotify, clima e distância.
 
-Fluxo da aplicação:
+```text
+Navegador (React/Vite) → API Node/Express → PostgreSQL
+                              ↓
+                        Serviço Python/FastAPI → Gemini e ferramentas
+```
 
-1. O frontend envia a mensagem para o backend Node.
-2. O backend Node salva a conversa e as mensagens no banco.
-3. O backend Node chama o serviço Python.
-4. O serviço Python conversa com o Gemini e devolve a resposta.
-5. O backend Node salva a resposta e retorna para o frontend.
-
-Fluxo da análise de imagem:
-
-1. O usuário seleciona uma imagem no frontend.
-2. O frontend envia a imagem em base64 com um prompt para o backend Node.
-3. O backend Node encaminha a imagem para o serviço Python.
-4. O serviço Python envia a imagem para o Gemini e recebe a análise.
-5. A resposta volta para o chat da conversa atual.
+O Node envia as 30 mensagens mais recentes ao serviço Python a cada solicitação. Assim, o contexto recente continua disponível após reiniciar o serviço. Mensagens e imagens ficam no PostgreSQL; o serviço Python não guarda sessões de conversa em memória.
 
 ## Requisitos
 
-- Node.js 18+
+- Node.js 22.13+ ou 24+
 - Python 3.10+
-- PostgreSQL
+- PostgreSQL ou Docker para iniciar o banco local de exemplo
+- Chave de API do Gemini
 
-## Configuração
+As integrações Google, Maps e Spotify exigem credenciais próprias. O chat por texto e a análise de imagens funcionam sem configurar essas integrações adicionais.
 
-### 1. Clonar o projeto
+## Executar localmente
 
-```bash
-git clone https://github.com/MCTelles/jarvis-gemini.git
-cd jarvis-gemini
-```
+1. Clone o repositório e configure os exemplos de ambiente:
 
-### 2. Configurar variáveis do Python
+   ```bash
+   git clone https://github.com/MCTelles/jarvis-gemini.git
+   cd jarvis-gemini
+   cp .env.example .env
+   cp jarvis-node-backend/.env.example jarvis-node-backend/.env
+   cp jarvis-frontend/.env.example jarvis-frontend/.env
+   ```
 
-Crie um arquivo `.env` na raiz com base em `.env.example`.
+2. Coloque sua chave em `GOOGLE_API_KEY` no `.env` da raiz. Ajuste `DATABASE_URL` em `jarvis-node-backend/.env` para seu PostgreSQL. Para usar o banco local do projeto, execute `docker compose up -d db` e mantenha a URL do exemplo.
 
-```bash
-cp .env.example .env
-```
+3. Instale as dependências e prepare o banco:
 
-Preencha:
+   ```bash
+   cd jarvis-frontend && npm ci && cd ..
+   cd jarvis-node-backend && npm ci && npx prisma generate && npx prisma db push && cd ..
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
 
-- `GOOGLE_API_KEY`
-- `MAPS_API_KEY`
-- `SPOTIFY_CLIENT_ID` e `SPOTIFY_CLIENT_SECRET` se quiser abrir direto a primeira música encontrada
+4. Em três terminais, inicie os serviços nesta ordem:
 
-### 3. Configurar variáveis do backend Node
+   ```bash
+   # Terminal 1, na raiz do projeto, com o ambiente Python ativado
+   python3 backend.py
 
-Crie `jarvis-node-backend/.env` com base em `jarvis-node-backend/.env.example`.
+   # Terminal 2
+   cd jarvis-node-backend && npm run dev
 
-```bash
-cp jarvis-node-backend/.env.example jarvis-node-backend/.env
-```
+   # Terminal 3
+   cd jarvis-frontend && npm run dev
+   ```
 
-Preencha principalmente:
+5. Abra [http://localhost:5173](http://localhost:5173), crie uma conversa e envie uma mensagem.
 
-- `DATABASE_URL`
-- `PORT`
-- `PYTHON_SERVICE_URL`
+Se não usar Docker, crie um banco PostgreSQL e informe sua URL em `DATABASE_URL` antes de executar o Prisma. Para testar uma mensagem sem a interface, use `python3 -m gemini "olá"` com o ambiente Python ativado.
 
-### 4. OAuth do Google
+## Integrações opcionais
 
-Este projeto usa autenticação Google para recursos como Gmail, Calendar e YouTube.
+- **Google Calendar, Gmail e YouTube:** coloque seu `credentials.json` OAuth na raiz. A primeira chamada a uma dessas ferramentas abre a autorização e gera um `token.json` local. Esses arquivos são ignorados pelo Git. As permissões solicitadas estão em `gemini/config.py`.
+- **Maps:** configure `MAPS_API_KEY` no `.env` da raiz.
+- **Spotify:** configure `SPOTIFY_CLIENT_ID` e `SPOTIFY_CLIENT_SECRET` para abrir a primeira faixa encontrada. Sem essas credenciais, a busca abre no navegador.
+- **Voz:** o ditado depende do suporte do navegador à Web Speech API. A leitura em voz ocorre no computador que executa o Python; o controle do volume do microfone usa `osascript` no macOS.
 
-- O arquivo `credentials.json` não deve ser enviado ao GitHub.
-- Cada integrante deve ter acesso ao client OAuth cadastrado.
-- Na primeira execução do backend Python, cada pessoa vai autenticar sua própria conta e gerar seu próprio `token.json`.
-- O arquivo `token.json` também não deve ser enviado ao GitHub.
+## Limites e cuidados
 
-## Instalação
+Este é um aplicativo pessoal para execução **local**. Node e Python escutam em `127.0.0.1`, e o Node aceita a origem do frontend configurada em `FRONTEND_ORIGIN`. Não publique essas APIs na internet sem adicionar autenticação e autorização às ferramentas. O assistente pode executar ações locais e acessar dados das contas que você conectar.
 
-### Frontend
+As imagens são guardadas como dados base64 no banco para manter o histórico visual. Isso simplifica o exemplo, mas aumenta o tamanho do banco; para um uso maior, seria melhor usar armazenamento de arquivos. O contexto enviado ao modelo é limitado às 30 mensagens mais recentes. Chamadas à API do Gemini e às integrações externas podem gerar custos ou depender de cotas da sua conta.
 
-```bash
-cd jarvis-frontend
-npm install
-```
+## Estrutura
 
-### Backend Node
+| Caminho | Responsabilidade |
+| --- | --- |
+| `jarvis-frontend/` | Interface React e Vite |
+| `jarvis-node-backend/` | API Express, persistência Prisma e PostgreSQL |
+| `backend.py` | API FastAPI local para IA e voz |
+| `gemini/` | Integração com Gemini e ferramentas |
 
-```bash
-cd jarvis-node-backend
-npm install
-```
-
-### Backend Python
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-## Banco de dados
-
-O backend Node usa Prisma com PostgreSQL.
-
-Depois de configurar o `DATABASE_URL`, gere o client e aplique o schema:
+## Verificações
 
 ```bash
-cd jarvis-node-backend
-npx prisma generate
-npx prisma db push
-```
-
-## Como rodar
-
-Abra 3 terminais.
-
-### Terminal 1: serviço Python
-
-```bash
-cd /caminho/para/jarvis-gemini
-source .venv/bin/activate
-python3 backend.py
-```
-
-O serviço sobe por padrão em `http://localhost:8000`.
-
-### Terminal 2: backend Node
-
-```bash
-cd /caminho/para/jarvis-gemini/jarvis-node-backend
-npm run dev
-```
-
-O backend sobe por padrão em `http://localhost:3001`.
-
-### Terminal 3: frontend
-
-```bash
-cd /caminho/para/jarvis-gemini/jarvis-frontend
-npm install
-npm run dev
-```
-
-O frontend normalmente sobe em `http://localhost:5173`.
-
-## Como usar a análise de imagem
-
-1. Crie ou selecione uma conversa.
-2. Clique no botão de imagem ao lado do campo de texto.
-3. Escolha uma imagem do computador.
-4. Digite um prompt como:
-   - `descreva essa imagem`
-   - `quais objetos aparecem aqui?`
-   - `analise essa imagem em detalhes`
-   - `tem texto nessa imagem?`
-5. Envie a mensagem normalmente.
-
-Observações:
-
-- Se você enviar só a imagem sem texto, o sistema usa um prompt padrão de análise.
-- A imagem aparece no chat durante a sessão atual.
-- No banco, por enquanto fica salvo apenas o texto da solicitação da imagem e a resposta da IA.
-
-## Funcionalidades atuais
-
-- criação de conversas
-- histórico salvo em banco
-- exclusão de conversas
-- integração com Gemini
-- análise de imagem com Gemini
-- abertura de sites
-- notas locais
-- agenda Google
-- leitura de e-mails
-- busca de vídeo no YouTube
-- busca de música no Spotify
-- clima e distância
-- TTS por voz no macOS
-
-## O que subir no GitHub
-
-Pode subir:
-
-- código-fonte
-- `README.md`
-- `.env.example`
-- `jarvis-node-backend/.env.example`
-- `package.json`, `package-lock.json`
-- `requirements.txt`
-
-Não deve subir:
-
-- `.env`
-- `credentials.json`
-- `token.json`
-- `node_modules`
-- `.venv`
-- arquivos pessoais em `notas_salvas/`
-
-## Checklist para os colegas testarem
-
-1. Clonar o repositório.
-2. Criar `.env` na raiz.
-3. Criar `jarvis-node-backend/.env`.
-4. Instalar dependências do frontend.
-5. Instalar dependências do backend Node.
-6. Criar ambiente virtual e instalar dependências Python.
-7. Configurar o PostgreSQL.
-8. Rodar `npx prisma db push`.
-9. Subir Python, Node e frontend.
-10. Testar uma conversa normal por texto.
-11. Testar o envio de uma imagem para análise.
-12. Fazer login Google na primeira execução, se forem usar integrações OAuth.
-
-## Git
-
-Para iniciar o repositório e publicar:
-
-```bash
-git init
-git add .
-git commit -m "feat: estrutura inicial do jarvis gemini"
-git branch -M main
-git remote add origin https://github.com/MCTelles/jarvis-gemini.git
-git push -u origin main
+cd jarvis-frontend && npm run lint && npm run build
+cd ../jarvis-node-backend && npx prisma validate
+cd .. && python3 -m compileall -q backend.py gemini
 ```

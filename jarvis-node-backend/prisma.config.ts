@@ -1,7 +1,8 @@
-import { defineConfig } from '@prisma/config';
+import { defineConfig, env } from '@prisma/config';
+import 'dotenv/config';
 
 export default defineConfig({
 	datasource: {
-		url: 'postgresql://marcelodacostatelles@localhost:5432/jarvis_db?schema=public',
+		url: env('DATABASE_URL'),
 	},
 });

@@ -167,3 +167,60 @@ body::after {
 	background: var(--border);
 	border-radius: 2px;
 }
+
+.error-message {
+	color: #ff809f;
+	font-size: 14px;
+	margin-bottom: 10px;
+}
+
+@media (max-width: 700px) {
+	.app-shell {
+		flex-direction: column;
+		height: 100dvh !important;
+	}
+
+	.sidebar {
+		width: 100% !important;
+		max-height: 175px;
+		padding: 10px 14px !important;
+		border-right: 0 !important;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.sidebar > div:first-child,
+	.sidebar > button {
+		margin-bottom: 8px !important;
+	}
+
+	.sidebar > div:last-child {
+		flex-direction: row !important;
+		min-height: 48px;
+		overflow-x: auto;
+		overflow-y: hidden !important;
+	}
+
+	.sidebar > div:last-child > div {
+		min-width: 180px;
+	}
+
+	.chat-panel {
+		width: 100%;
+		min-height: 0;
+		padding: 0 14px !important;
+	}
+
+	.composer {
+		gap: 5px !important;
+	}
+
+	.composer button {
+		width: 40px !important;
+		height: 46px !important;
+		flex-shrink: 0;
+	}
+
+	.composer textarea {
+		min-width: 0;
+	}
+}

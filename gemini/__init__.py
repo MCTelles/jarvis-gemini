@@ -4,16 +4,15 @@ import sys
 if __package__ in {None, ""}:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from gemini.config import GOOGLE_API_KEY, MAPS_API_KEY
-    from gemini.service import analisar_imagem, apagar_conversa, enviar_mensagem
+    from gemini.service import analisar_imagem, enviar_mensagem
 else:
     from .config import GOOGLE_API_KEY, MAPS_API_KEY
-    from .service import analisar_imagem, apagar_conversa, enviar_mensagem
+    from .service import analisar_imagem, enviar_mensagem
 
 __all__ = [
     "GOOGLE_API_KEY",
     "MAPS_API_KEY",
     "enviar_mensagem",
-    "apagar_conversa",
     "analisar_imagem",
 ]
 
@@ -24,7 +23,7 @@ def main():
         return
 
     texto = " ".join(sys.argv[1:])
-    resposta = enviar_mensagem(texto, "cli")
+    resposta = enviar_mensagem(texto, [])
     print(resposta)
 
 

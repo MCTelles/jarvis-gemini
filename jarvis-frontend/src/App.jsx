@@ -12,7 +12,9 @@ import {
 	X,
 } from 'lucide-react';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 export default function App() {
 	const [conversations, setConversations] = useState([]);
@@ -24,24 +26,65 @@ export default function App() {
 	const [isRecording, setIsRecording] = useState(false);
 	const [selectedImage, setSelectedImage] = useState(null);
 	const [imagePreview, setImagePreview] = useState('');
+	const [error, setError] = useState('');
 
 	const chatRef = useRef(null);
 	const recognitionRef = useRef(null);
 	const fileInputRef = useRef(null);
+	const enviarMensagemRef = useRef(null);
+	const activeChatIdRef = useRef(activeChatId);
+	const messagesRequestVersionRef = useRef(0);
+	useEffect(() => {
+		activeChatIdRef.current = activeChatId;
+	}, [activeChatId]);
 
 	// 1. Ao iniciar, carrega a lista de conversas
 	useEffect(() => {
-		carregarConversas();
-		configurarReconhecimentoVoz();
+		let cancelado = false;
+		axios.get(`${API_URL}/conversations`)
+			.then(res => {
+				if (cancelado) return;
+				setConversations(res.data);
+				if (res.data.length > 0) setActiveChatId(res.data[0].id);
+			})
+			.catch(() => {
+				if (!cancelado) setError('Não foi possível carregar as conversas.');
+			});
+
+		const SpeechRecognition =
+			window.SpeechRecognition || window.webkitSpeechRecognition;
+		if (SpeechRecognition) {
+			const recognition = new SpeechRecognition();
+			recognition.lang = 'pt-BR';
+			recognition.continuous = false;
+			recognition.interimResults = false;
+			recognition.onresult = e => enviarMensagemRef.current?.(e.results[0][0].transcript);
+			recognition.onerror = () => setIsRecording(false);
+			recognition.onend = () => setIsRecording(false);
+			recognitionRef.current = recognition;
+		}
+		return () => {
+			cancelado = true;
+			recognitionRef.current?.stop();
+		};
 	}, []);
 
 	// 2. Sempre que a conversa ativa mudar, busca as mensagens dela
 	useEffect(() => {
+		let cancelado = false;
+		const requestVersion = ++messagesRequestVersionRef.current;
 		if (activeChatId) {
-			carregarMensagens(activeChatId);
-		} else {
-			setMessages([]);
+			axios.get(`${API_URL}/conversations/${activeChatId}/messages`)
+				.then(res => {
+					if (!cancelado && requestVersion === messagesRequestVersionRef.current) {
+						setMessages(res.data);
+					}
+				})
+				.catch(() => {
+					if (!cancelado) setError('Não foi possível carregar as mensagens.');
+				});
 		}
+		return () => { cancelado = true; };
 	}, [activeChatId]);
 
 	// 3. Rola o chat para baixo sempre que chegar mensagem nova
@@ -61,15 +104,7 @@ export default function App() {
 			}
 		} catch (error) {
 			console.error('Erro ao carregar conversas', error);
-		}
-	};
-
-	const carregarMensagens = async id => {
-		try {
-			const res = await axios.get(`${API_URL}/conversations/${id}/messages`);
-			setMessages(res.data);
-		} catch (error) {
-			console.error('Erro ao carregar mensagens', error);
+			setError('Não foi possível atualizar as conversas.');
 		}
 	};
 
@@ -77,10 +112,13 @@ export default function App() {
 		try {
 			const res = await axios.post(`${API_URL}/conversations`);
 			const nova = res.data;
-			setConversations([nova, ...conversations]); // Coloca no topo da lista
+			setConversations(prev => [nova, ...prev]);
+			setMessages([]);
+			limparImagemSelecionada();
 			setActiveChatId(nova.id);
 		} catch (error) {
 			console.error('Erro ao criar conversa', error);
+			setError('Não foi possível criar a conversa.');
 		}
 	};
 
@@ -97,26 +135,15 @@ export default function App() {
 			}
 		} catch (error) {
 			console.error('Erro ao apagar conversa', error);
-		}
-	};
-
-	const configurarReconhecimentoVoz = () => {
-		const SpeechRecognition =
-			window.SpeechRecognition || window.webkitSpeechRecognition;
-		if (SpeechRecognition) {
-			const recognition = new SpeechRecognition();
-			recognition.lang = 'pt-BR';
-			recognition.continuous = false;
-			recognition.interimResults = false;
-
-			recognition.onresult = e => enviarMensagem(e.results[0][0].transcript);
-			recognition.onerror = () => setIsRecording(false);
-			recognition.onend = () => setIsRecording(false);
-			recognitionRef.current = recognition;
+			setError('Não foi possível apagar a conversa.');
 		}
 	};
 
 	const toggleMic = () => {
+		if (!recognitionRef.current) {
+			setError('Ditado por voz não disponível neste navegador.');
+			return;
+		}
 		if (isRecording) {
 			recognitionRef.current?.stop();
 		} else {
@@ -136,7 +163,13 @@ export default function App() {
 	const selecionarImagem = e => {
 		const arquivo = e.target.files?.[0];
 		if (!arquivo) return;
+		if (!IMAGE_TYPES.has(arquivo.type) || arquivo.size > MAX_IMAGE_BYTES) {
+			setError('Escolha uma imagem PNG, JPEG ou WebP de até 5 MB.');
+			limparImagemSelecionada();
+			return;
+		}
 
+		setError('');
 		setSelectedImage(arquivo);
 
 		const reader = new FileReader();
@@ -164,9 +197,13 @@ export default function App() {
 		});
 
 	const enviarMensagem = async textoOverride => {
+		if (isTyping) return;
 		const texto = textoOverride || input;
 		const prompt = texto.trim() || 'Analise esta imagem em detalhes.';
 		if ((!texto.trim() && !selectedImage) || !activeChatId) return;
+		const conversationId = activeChatId;
+		messagesRequestVersionRef.current += 1;
+		setError('');
 
 		const novaMensagem = {
 			id: Date.now(),
@@ -189,43 +226,43 @@ export default function App() {
 					mimeType: selectedImage.type || 'image/jpeg',
 					fileName: selectedImage.name,
 					tts: ttsActive,
-					conversationId: activeChatId,
+					conversationId,
 				});
 			} else {
 				res = await axios.post(`${API_URL}/chat`, {
 					texto: texto,
 					tts: ttsActive,
-					conversationId: activeChatId,
+					conversationId,
 				});
 			}
 
-			setMessages(prev => [
-				...prev,
-				{
-					id: Date.now() + 1,
-					role: 'ai',
-					content: res.data.resposta,
-					createdAt: new Date(),
-				},
-			]);
+			if (activeChatIdRef.current === conversationId) {
+				setMessages(prev => [
+					...prev,
+					{
+						id: Date.now() + 1,
+						role: 'ai',
+						content: res.data.resposta,
+						createdAt: new Date(),
+					},
+				]);
+			}
 
 			limparImagemSelecionada();
 			carregarConversas();
-		} catch (error) {
-			setMessages(prev => [
-				...prev,
-				{
-					id: Date.now() + 1,
-					role: 'ai',
-					content: '⚠️ Erro de conexão.',
-					createdAt: new Date(),
-				},
-			]);
+		} catch {
+			setError('Não foi possível enviar a mensagem. Tente novamente.');
+			if (activeChatIdRef.current === conversationId) {
+				setMessages(prev => prev.filter(msg => msg.id !== novaMensagem.id));
+				setInput(textoOverride ? input : texto);
+			}
 		} finally {
-			limparImagemSelecionada();
 			setIsTyping(false);
 		}
 	};
+	useEffect(() => {
+		enviarMensagemRef.current = enviarMensagem;
+	});
 
 	const handleKeyDown = e => {
 		if (e.key === 'Enter' && !e.shiftKey) {
@@ -244,6 +281,7 @@ export default function App() {
 
 			<div
 				id="app"
+				className="app-shell"
 				style={{
 					display: 'flex',
 					height: '100vh',
@@ -255,6 +293,7 @@ export default function App() {
 				{/* SIDEBAR (MENU LATERAL) */}
 				{/* ========================================== */}
 				<div
+					className="sidebar"
 					style={{
 						width: '260px',
 						background: 'var(--panel)',
@@ -341,8 +380,24 @@ export default function App() {
 					>
 						{conversations.map(conv => (
 							<div
-								key={conv.id}
-								onClick={() => setActiveChatId(conv.id)}
+									key={conv.id}
+									role="button"
+									tabIndex={0}
+									aria-label={`Abrir conversa ${conv.title}`}
+									onClick={() => {
+										setMessages([]);
+										limparImagemSelecionada();
+										setActiveChatId(conv.id);
+									}}
+									onKeyDown={e => {
+										if (e.target !== e.currentTarget) return;
+										if (e.key === 'Enter' || e.key === ' ') {
+											e.preventDefault();
+											setMessages([]);
+											limparImagemSelecionada();
+											setActiveChatId(conv.id);
+										}
+									}}
 								style={{
 									padding: '12px',
 									borderRadius: '6px',
@@ -405,6 +460,7 @@ export default function App() {
 				{/* ÁREA DE CHAT PRINCIPAL */}
 				{/* ========================================== */}
 				<div
+					className="chat-panel"
 					style={{
 						flex: 1,
 						display: 'flex',
@@ -513,14 +569,12 @@ export default function App() {
 											color: msg.role === 'ai' ? 'var(--text)' : '#c8b8f5',
 										}}
 									>
-										<span
-											dangerouslySetInnerHTML={{
-												__html: msg.content.replace(/\n/g, '<br/>'),
-											}}
-										/>
-										{msg.imageUrl && (
-											<img
-												src={msg.imageUrl}
+											<span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+												{msg.content}
+											</span>
+											{(msg.imageData || msg.imageUrl) && (
+												<img
+													src={msg.imageData || msg.imageUrl}
 												alt="Imagem enviada para analise"
 												style={{
 													display: 'block',
@@ -607,16 +661,17 @@ export default function App() {
 						)}
 					</div>
 
-					<footer
+						<footer
 						style={{
 							padding: '16px 0 24px',
 							borderTop: '1px solid var(--border)',
 						}}
-					>
+						>
+						{error && <p role="alert" className="error-message">{error}</p>}
 						<input
 							ref={fileInputRef}
 							type="file"
-							accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+								accept="image/png,image/jpeg,image/webp"
 							onChange={selecionarImagem}
 							style={{ display: 'none' }}
 						/>
@@ -647,8 +702,9 @@ export default function App() {
 								<div style={{ color: 'var(--text-dim)', fontSize: 13 }}>
 									{selectedImage?.name || 'Imagem pronta para analise'}
 								</div>
-								<button
-									onClick={limparImagemSelecionada}
+									<button
+										onClick={limparImagemSelecionada}
+										aria-label="Remover imagem selecionada"
 									style={{
 										marginLeft: 'auto',
 										background: 'transparent',
@@ -664,9 +720,10 @@ export default function App() {
 								</button>
 							</div>
 						)}
-						<div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-							<button
-								onClick={() => setTtsActive(!ttsActive)}
+							<div className="composer" style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+								<button
+									onClick={() => setTtsActive(!ttsActive)}
+									aria-label={ttsActive ? 'Desativar voz' : 'Ativar voz'}
 								style={{
 									width: 52,
 									height: 52,
@@ -682,8 +739,9 @@ export default function App() {
 							>
 								{ttsActive ? <Volume2 size={20} /> : <VolumeX size={20} />}
 							</button>
-							<button
-								onClick={() => fileInputRef.current?.click()}
+								<button
+									onClick={() => fileInputRef.current?.click()}
+									aria-label="Adicionar imagem"
 								disabled={!activeChatId || isTyping}
 								style={{
 									width: 52,
@@ -700,7 +758,8 @@ export default function App() {
 							>
 								<Image size={20} />
 							</button>
-							<textarea
+								<textarea
+									aria-label="Mensagem"
 								value={input}
 								onChange={e => setInput(e.target.value)}
 								onKeyDown={handleKeyDown}
@@ -721,8 +780,9 @@ export default function App() {
 									maxHeight: 140,
 								}}
 							/>
-							<button
-								onClick={toggleMic}
+								<button
+									onClick={toggleMic}
+									aria-label={isRecording ? 'Parar gravação' : 'Ditado por voz'}
 								disabled={!activeChatId}
 								style={{
 									width: 52,
@@ -741,8 +801,9 @@ export default function App() {
 							>
 								<Mic size={20} />
 							</button>
-							<button
-								onClick={() => enviarMensagem()}
+								<button
+									onClick={() => enviarMensagem()}
+									aria-label="Enviar mensagem"
 								disabled={(!input.trim() && !selectedImage) || isTyping || !activeChatId}
 								style={{
 									width: 52,
